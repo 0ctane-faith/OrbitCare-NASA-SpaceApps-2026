@@ -79,3 +79,7 @@ If deployed in a real mission architecture, OrbitCare follows this data pipeline
 * **Wearable Integration:** Future iterations could passively ingest data from astronaut wearables (e.g., heart rate variability, sleep stages, skin temperature) to reduce the 38-question manual input down to just 10 subjective pain questions.
 * **Long-Term Trend Analysis:** Integrating Facebook's `Prophet` library to analyze how an astronaut's risk scores fluctuate over a 2-year Mars transit, allowing for long-term predictive trajectory mapping.
 * **Edge Computing:** Ensuring the entire FastAPI backend and `.pkl` model run locally on a spacecraft server (Edge AI), guaranteeing the system functions perfectly even during total communication blackouts with Earth.
+
+
+click here to see my live project:
+https://serene-liter-76026895.figma.site
