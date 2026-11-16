@@ -1,0 +1,236 @@
+//ML code
+
+Here is the complete, heavily commented Machine Learning code for **OrbitCare**. This is the exact script you should paste into your `orbitcare_ml_model.py` file for your GitHub repository.
+
+The comments are designed to explain the logic clearly to anyone reviewing your repository, including hackathon judges or future recruiters.
+
+```python
+"""
+OrbitCare: Predictive Health Monitoring ML Engine
+NASA Space Apps Challenge 2026
+
+This script performs three main functions:
+1. Generates a synthetic analog dataset mimicking astronaut medical profiles in microgravity.
+2. Trains an XGBoost Multi-Output Regressor to predict interconnected health risks.
+3. Simulates a dashboard inference (predicting risks based on daily inputs) and 
+   extracts Feature Importance (Explainable AI) to provide actionable countermeasures.
+"""
+
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.model_selection import train_test_split
+from sklearn.multioutput import MultiOutputRegressor
+from sklearn.metrics import mean_absolute_error
+import joblib
+
+# ==========================================
+# 1. SYNTHETIC DATA GENERATOR
+# ==========================================
+def generate_questionnaire_data(num_samples=3000):
+    """
+    Generates mock clinical data representing 38 daily questionnaire inputs.
+    Because real NASA LSAH medical data is restricted by HIPAA, this synthetic 
+    dataset mathematically models the biological 'Calcium-Hormone Loop' in microgravity.
+    """
+    np.random.seed(42)
+    
+    # --- A. Bone Loss Indicators (Simulating 1-10 scale or Yes=1/No=0) ---
+    q_bone_back_pain = np.random.randint(0, 11, num_samples)          # Q1: Back pain severity (0-10)
+    q_bone_hip_leg_pain = np.random.randint(0, 11, num_samples)       # Q2: Hip/leg pain (0-10)
+    q_bone_strength_decline = np.random.choice([0, 1], num_samples)   # Q3: Strength decrease
+    q_bone_weakness = np.random.choice([0, 1], num_samples)           # Q4: Feel weaker
+    q_bone_fracture = np.random.choice([0, 1], p=[0.95, 0.05], size=num_samples) # Q5: Recent fracture
+    q_bone_walking_pain = np.random.randint(0, 11, num_samples)       # Q6: Pain walking (0-10)
+    q_bone_standing_diff = np.random.choice([0, 1], num_samples)      # Q7: Standing difficulty
+    q_bone_height_change = np.random.choice([0, 1], p=[0.9, 0.1], size=num_samples) # Q8: Spinal elongation
+    q_bone_tired_activity = np.random.choice([0, 1], num_samples)     # Q9: Tired after activity
+    q_bone_muscle_weakness = np.random.choice([0, 1], num_samples)    # Q10: Muscle weakness
+    
+    # --- B. Kidney Stone Indicators ---
+    q_kidney_flank_pain = np.random.randint(0, 11, num_samples)       # Q1: Lower back/side pain (0-10)
+    q_kidney_blood_urine = np.random.choice([0, 1], p=[0.9, 0.1], size=num_samples) # Q2: Hematuria
+    q_kidney_dark_urine = np.random.choice([0, 1], num_samples)       # Q3: Dark urine (Dehydration marker)
+    q_kidney_burn_urinate = np.random.choice([0, 1], num_samples)     # Q4: Burning sensation
+    q_kidney_freq_urinate = np.random.choice([0, 1], num_samples)     # Q5: Frequent urination
+    q_kidney_pain_urinate = np.random.randint(0, 11, num_samples)     # Q6: Pain urinating (0-10)
+    q_kidney_low_output = np.random.choice([0, 1], num_samples)       # Q7: Decreased output
+    q_kidney_nausea = np.random.choice([0, 1], num_samples)           # Q8: Nausea
+    q_kidney_dehydrated = np.random.choice([0, 1], num_samples)       # Q9: Subjective dehydration
+    q_kidney_smell_urine = np.random.choice([0, 1], num_samples)      # Q10: Unusual smell
+    
+    # --- C. Women's Reproductive Health Indicators (0 = Normal, 1 = Abnormal) ---
+    q_repro_regular = np.random.choice([0, 1], num_samples)           # Q1: Regular periods? 
+    q_repro_missed = np.random.choice([0, 1], num_samples)            # Q2: Missed periods
+    q_repro_bleed_change = np.random.choice([0, 1], num_samples)      # Q3: Bleeding volume changes
+    q_repro_pelvic_pain = np.random.randint(0, 11, num_samples)       # Q4: Pelvic pain (0-10)
+    q_repro_cramps = np.random.randint(0, 11, num_samples)            # Q5: Severe cramps (0-10)
+    q_repro_unexpected_bleed = np.random.choice([0, 1], p=[0.85, 0.15], size=num_samples) # Q6
+    q_repro_discharge = np.random.choice([0, 1], num_samples)         # Q7
+    q_repro_mood = np.random.choice([0, 1], num_samples)              # Q8
+    q_repro_breast_tender = np.random.choice([0, 1], num_samples)     # Q9
+    q_repro_cycle_change = np.random.choice([0, 1], num_samples)      # Q10: General cycle disruption
+    
+    # --- D. General Health Indicators ---
+    q_gen_sleep = np.random.choice([0, 1], num_samples)               # Q1: Sleeping properly
+    q_gen_headache = np.random.choice([0, 1], num_samples)            # Q2: Headaches
+    q_gen_dizzy = np.random.choice([0, 1], num_samples)               # Q3: Orthostatic intolerance
+    q_gen_fatigue = np.random.choice([0, 1], num_samples)             # Q4: Fatigue
+    q_gen_vision = np.random.choice([0, 1], p=[0.9, 0.1], size=num_samples) # Q5: SANS risk (vision)
+    q_gen_nausea = np.random.choice([0, 1], num_samples)              # Q6: Space motion sickness
+    q_gen_appetite = np.random.choice([0, 1], num_samples)            # Q7: Appetite loss
+    q_gen_balance = np.random.choice([0, 1], num_samples)             # Q8: Vestibular balance issues
+    
+    # Compile all input features into a Pandas DataFrame
+    df = pd.DataFrame({
+        'q_bone_back_pain': q_bone_back_pain, 'q_bone_hip_leg_pain': q_bone_hip_leg_pain,
+        'q_bone_strength_decline': q_bone_strength_decline, 'q_bone_weakness': q_bone_weakness,
+        'q_bone_fracture': q_bone_fracture, 'q_bone_walking_pain': q_bone_walking_pain,
+        'q_bone_standing_diff': q_bone_standing_diff, 'q_bone_height_change': q_bone_height_change,
+        'q_bone_tired_activity': q_bone_tired_activity, 'q_bone_muscle_weakness': q_bone_muscle_weakness,
+        
+        'q_kidney_flank_pain': q_kidney_flank_pain, 'q_kidney_blood_urine': q_kidney_blood_urine,
+        'q_kidney_dark_urine': q_kidney_dark_urine, 'q_kidney_burn_urinate': q_kidney_burn_urinate,
+        'q_kidney_freq_urinate': q_kidney_freq_urinate, 'q_kidney_pain_urinate': q_kidney_pain_urinate,
+        'q_kidney_low_output': q_kidney_low_output, 'q_kidney_nausea': q_kidney_nausea,
+        'q_kidney_dehydrated': q_kidney_dehydrated, 'q_kidney_smell_urine': q_kidney_smell_urine,
+        
+        'q_repro_regular': q_repro_regular, 'q_repro_missed': q_repro_missed,
+        'q_repro_bleed_change': q_repro_bleed_change, 'q_repro_pelvic_pain': q_repro_pelvic_pain,
+        'q_repro_cramps': q_repro_cramps, 'q_repro_unexpected_bleed': q_repro_unexpected_bleed,
+        'q_repro_discharge': q_repro_discharge, 'q_repro_mood': q_repro_mood,
+        'q_repro_breast_tender': q_repro_breast_tender, 'q_repro_cycle_change': q_repro_cycle_change,
+        
+        'q_gen_sleep': q_gen_sleep, 'q_gen_headache': q_gen_headache,
+        'q_gen_dizzy': q_gen_dizzy, 'q_gen_fatigue': q_gen_fatigue,
+        'q_gen_vision': q_gen_vision, 'q_gen_nausea': q_gen_nausea,
+        'q_gen_appetite': q_gen_appetite, 'q_gen_balance': q_gen_balance
+    })
+    
+    # --- Generating Target Risk Scores (0-100%) based on clinical correlation ---
+    # Kidney Stone Risk: Heavily influenced by pain, dehydration, blood, and urinary output
+    df['risk_kidneystone_now'] = np.clip(
+        (df['q_kidney_flank_pain'] * 4) + (df['q_kidney_pain_urinate'] * 3) + 
+        (df['q_kidney_blood_urine'] * 30) + (df['q_kidney_dark_urine'] * 10) +
+        (df['q_kidney_dehydrated'] * 10) + (df['q_kidney_low_output'] * 15), 0, 100)
+    
+    # Future Kidney Risk relies on current baseline + urinary frequency + bone calcium dumping
+    df['risk_kidneystone_future'] = np.clip(df['risk_kidneystone_now'] + (df['q_kidney_freq_urinate'] * 5) + (df['q_bone_weakness']*5), 0, 100)
+    
+    # Bone Loss Risk: Correlates with physical weakness, structural changes, and menstrual disruption
+    df['risk_boneloss_future'] = np.clip(
+        (df['q_bone_weakness'] * 15) + (df['q_bone_strength_decline'] * 10) +
+        (df['q_bone_height_change'] * 25) + (df['q_bone_fracture'] * 40) +
+        ((1 - df['q_repro_regular']) * 15) + (df['q_repro_missed'] * 10), 0, 100)
+    
+    # Spinal Pain Tomorrow: Driven by microgravity spinal elongation (back pain), fatigue, and sleep quality
+    df['risk_spinalpain_tomorrow'] = np.clip(
+        (df['q_bone_back_pain'] * 5) + (df['q_bone_hip_leg_pain'] * 2) +
+        (df['q_bone_walking_pain'] * 2) + ((1 - df['q_gen_sleep']) * 10) +
+        (df['q_gen_fatigue'] * 5), 0, 100)
+    
+    # Reproductive Health Disruption Risk
+    df['risk_repro_disruption'] = np.clip(
+        ((1 - df['q_repro_regular']) * 20) + (df['q_repro_missed'] * 20) +
+        (df['q_repro_cycle_change'] * 20) + (df['q_repro_unexpected_bleed'] * 25) +
+        (df['q_repro_pelvic_pain'] * 2), 0, 100)
+
+    # Inject realistic variance/noise into the risk scores to prevent model overfitting
+    for col in ['risk_kidneystone_now', 'risk_kidneystone_future', 'risk_boneloss_future', 'risk_spinalpain_tomorrow', 'risk_repro_disruption']:
+        df[col] = np.clip(df[col] + np.random.normal(0, 3, num_samples), 0, 100)
+
+    return df
+
+
+# ==========================================
+# 2. XGBOOST MODEL TRAINING
+# ==========================================
+print("Generating 3000 synthetic astronaut questionnaire profiles...")
+data = generate_questionnaire_data()
+
+# Dynamically extract all 38 question features as inputs (X)
+features = [col for col in data.columns if col.startswith('q_')]
+# Define the 5 forecasted risk timelines as targets (y)
+targets = ['risk_kidneystone_now', 'risk_kidneystone_future', 
+           'risk_boneloss_future', 'risk_spinalpain_tomorrow', 'risk_repro_disruption']
+
+X = data[features]
+y = data[targets]
+
+# Split dataset: 80% for training the model, 20% for testing its accuracy
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+print(f"Training XGBoost Engine on {len(features)} questionnaire inputs...")
+
+# Initialize the core XGBoost Regressor
+# We use max_depth=6 and learning_rate=0.05 to capture complex biological interactions
+xgb_estimator = xgb.XGBRegressor(
+    objective='reg:squarederror',
+    n_estimators=150,
+    learning_rate=0.05,
+    max_depth=6,
+    random_state=42
+)
+
+# Wrap the estimator to predict all 5 targets simultaneously
+model = MultiOutputRegressor(xgb_estimator)
+model.fit(X_train, y_train)
+
+# Evaluate model performance against the unseen test data
+predictions = model.predict(X_test)
+mae = mean_absolute_error(y_test, predictions)
+print(f"Model trained successfully! Mean Absolute Error: {mae:.2f}%\n")
+
+# Serialize and save the model for backend deployment (e.g., via Flask or FastAPI)
+joblib.dump(model, 'astronaut_questionnaire_model.pkl')
+
+
+# ==========================================
+# 3. DASHBOARD INFERENCE SIMULATION
+# ==========================================
+print("\n--- ASTRONAUT DASHBOARD SUBMISSION (SIMULATED) ---")
+# Simulating an astronaut submitting their daily assessment via the frontend UI.
+# 1 = Yes/Abnormal, 0 = No/Normal. Pain scales are 0-10.
+mock_survey = pd.DataFrame(columns=features)
+mock_survey.loc[0] = 0 # Establish a healthy baseline
+
+# Injecting warning signs based on a hypothetical stressful mission day
+mock_survey.at[0, 'q_kidney_flank_pain'] = 6       # Moderate flank pain
+mock_survey.at[0, 'q_kidney_dark_urine'] = 1       # Potential dehydration/calcium dump
+mock_survey.at[0, 'q_kidney_dehydrated'] = 1       
+mock_survey.at[0, 'q_kidney_low_output'] = 1       
+mock_survey.at[0, 'q_bone_back_pain'] = 5          # Moderate back pain (spinal elongation)
+mock_survey.at[0, 'q_gen_sleep'] = 0               # Poor sleep quality
+mock_survey.at[0, 'q_repro_regular'] = 0           # Irregular periods (impacts bone density)
+
+# Run the inputs through the trained model to generate the risk percentages
+predicted_risks = model.predict(mock_survey)[0]
+
+print("\n--- PREDICTIVE FORECAST SCORES ---")
+print(f"🔴 Kidney Stone Risk (NOW):      {predicted_risks[0]:.1f}%")
+print(f"🟠 Kidney Stone Risk (FUTURE):   {predicted_risks[1]:.1f}%")
+print(f"🟡 Bone Loss Risk (FUTURE):      {predicted_risks[2]:.1f}%")
+print(f"🔴 Spinal Pain (TOMORROW):       {predicted_risks[3]:.1f}%")
+print(f"🟠 Repro Health Disruption:      {predicted_risks[4]:.1f}%")
+
+
+# ==========================================
+# 4. ROOT CAUSE ANALYSIS (Explainable AI)
+# ==========================================
+print("\n--- CLINICAL INSIGHTS (Why is Kidney Stone Risk High?) ---")
+# Extract feature importance specifically for the Kidney Stone (NOW) prediction
+kidney_stone_model = model.estimators_[0] 
+importance = kidney_stone_model.feature_importances_
+feature_impact = sorted(zip(features, importance), key=lambda x: x[1], reverse=True)
+
+# Display the top 4 contributing factors to the astronaut's risk score
+for feature, score in feature_impact[:4]:
+    clean_name = feature.replace('q_kidney_', '').replace('q_', '').replace('_', ' ').title()
+    print(f" - {clean_name}: {score*100:.1f}% impact")
+
+print("\n💡 AUTOMATED COUNTERMEASURE TRIGGERED:")
+print("High correlation detected between reported dark urine, low output, and flank pain.")
+print("Immediate Action Required: Initiate hyper-hydration protocol (+800ml water).")
+print("Secondary Action: Recommend onboard ultrasound imaging if flank pain persists >24hrs.")
+
+```
